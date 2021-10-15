@@ -1,0 +1,13 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Python Fuzzer",
+            "type": "python",
+            "request": "launch",
+            "program": "${file}",
+            "console": "integratedTerminal",
+            "args": ["-i", "10.10.25.81", "-p", "1337", "-s", "OVERFLOW1 ", "-a", "pattern", "-l", "2000" ]
+        }
+    ]
+}
