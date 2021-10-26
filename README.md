@@ -1,5 +1,16 @@
 # Biff the Buffer
 
+```
+   ______  ___  ________ ________      _________  ___  ___  _______           ________  ___  ___  ________ ________ _______   ________     
+|\   __  \|\  \|\  _____\\  _____\    |\___   ___\\  \|\  \|\  ___ \         |\   __  \|\  \|\  \|\  _____\\  _____\\  ___ \ |\   __  \    
+\ \  \|\ /\ \  \ \  \__/\ \  \__/     \|___ \  \_\ \  \\\  \ \   __/|        \ \  \|\ /\ \  \\\  \ \  \__/\ \  \__/\ \   __/|\ \  \|\  \   
+ \ \   __  \ \  \ \   __\\ \   __\         \ \  \ \ \   __  \ \  \_|/__       \ \   __  \ \  \\\  \ \   __\\ \   __\\ \  \_|/_\ \   _  _\  
+  \ \  \|\  \ \  \ \  \_| \ \  \_|          \ \  \ \ \  \ \  \ \  \_|\ \       \ \  \|\  \ \  \\\  \ \  \_| \ \  \_| \ \  \_|\ \ \  \\  \| 
+   \ \_______\ \__\ \__\   \ \__\            \ \__\ \ \__\ \__\ \_______\       \ \_______\ \_______\ \__\   \ \__\   \ \_______\ \__\\ _\ 
+    \|_______|\|__|\|__|    \|__|             \|__|  \|__|\|__|\|_______|        \|_______|\|_______|\|__|    \|__|    \|_______|\|__|\|__|
+                                                                                                                                           
+```
+
 This is a tool used to aid in fuzzing for BoF vulnerabilities and quickly identifying the offset of the EIP.
 
 ## Usage
@@ -25,3 +36,8 @@ optional arguments:
                         (DEFAULT = 2s) How long the timeout should be for the connection
 
 ```
+
+## Potenital Improvements
+
+* Ability to send the path of the MSF modules.
+* Ability to quickly run the next "step" of determining the overflow
