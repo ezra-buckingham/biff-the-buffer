@@ -7,7 +7,7 @@
             "request": "launch",
             "program": "${file}",
             "console": "integratedTerminal",
-            "args": ["-i", "10.10.221.19", "-p", "1337", "-s", "OVERFLOW1 ", "-a", "pattern", "-l", "2000" ]
+            "args": ["-i", "10.10.221.19", "-p", "1337", "-s", "OVERFLOW1 ", "-a", "exploit","-c","/tmp/payload.bin","-r","018af274", "-o", "1978" ]
         }
     ]
 }
