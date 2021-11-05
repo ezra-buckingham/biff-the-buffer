@@ -13,6 +13,8 @@
 
 This is a tool used to aid in fuzzing for BoF vulnerabilities and quickly identifying the offset of the EIP.
 
+It was born as I had very little experience with BoF vulnerabilities and I wanted to learn how to exploit them and create a reliable way to move through each step of the identification and development process.
+
 ## Usage
 
 ```
@@ -48,6 +50,18 @@ optional arguments:
                         (DEFAULT = 2s) How long the timeout should be for the connection
 
 ```
+
+## Examples
+
+Some exploits will require raw bytes to be sent at the beginning or end. To handle those cases, provide the bytes in the string like below:
+
+```
+./biff-the-buffer.py -i 192.168.221.44 -p 13327 -s "\x11(setup sound " -e "\x90\x00#" -a fuzz
+```
+
+## Known Limitations
+
+The start and end options can have a mixture of bytes and ascii however, if there are any instances of a legtimate byte in the form of '\\x00' then that will be mangled by the script parsing.
 
 ## Potenital Improvements
 

